@@ -3,9 +3,10 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 
 ---------------------------------------------------------
--- 0. 基础设置与文件系统初始化
+-- 0. 基础设置与核心容器初始化
 ---------------------------------------------------------
 local FOLDER_NAME = "HAOXIAO_Player"
 if makefolder and not isfolder(FOLDER_NAME) then
@@ -19,6 +20,86 @@ if CoreGui:FindFirstChild("HAOXIAO_Display") then
     CoreGui:FindFirstChild("HAOXIAO_Display"):Destroy()
 end
 
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "HAOXIAO_ImagePlayer_GUI"
+ScreenGui.Parent = CoreGui
+ScreenGui.ResetOnSpawn = false
+
+---------------------------------------------------------
+-- 自定义丝滑空文件夹弹窗系统 (屏幕中下部)
+---------------------------------------------------------
+local function showCustomEmptyFolderWarning()
+    local warningFrame = Instance.new("Frame")
+    warningFrame.Size = UDim2.new(0, 420, 0, 70)
+    warningFrame.Position = UDim2.new(0.5, -210, 1, 100) -- 初始在屏幕下方外侧
+    warningFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    warningFrame.BackgroundTransparency = 0.2
+    warningFrame.BorderSizePixel = 0
+    warningFrame.ZIndex = 50
+    warningFrame.Parent = ScreenGui
+    
+    Instance.new("UICorner", warningFrame).CornerRadius = UDim.new(0, 8)
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Thickness = 1
+    stroke.Transparency = 0.5
+    stroke.Parent = warningFrame
+
+    local bigTitle = Instance.new("TextLabel")
+    bigTitle.Size = UDim2.new(1, 0, 0, 30)
+    bigTitle.Position = UDim2.new(0, 0, 0, 8)
+    bigTitle.BackgroundTransparency = 1
+    bigTitle.Text = "你的文件夹好像有点空"
+    bigTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    bigTitle.Font = Enum.Font.GothamBold
+    bigTitle.TextSize = 18
+    bigTitle.ZIndex = 51
+    bigTitle.Parent = warningFrame
+
+    local smallTitle = Instance.new("TextLabel")
+    smallTitle.Size = UDim2.new(1, -20, 0, 20)
+    smallTitle.Position = UDim2.new(0, 10, 0, 38)
+    smallTitle.BackgroundTransparency = 1
+    smallTitle.Text = "可以在这个路径放置文件:/storage/emulated/0/Delta/Workspace/HAOXIAO_Player/"
+    smallTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+    smallTitle.Font = Enum.Font.Gotham
+    smallTitle.TextSize = 11
+    smallTitle.TextWrapped = true
+    smallTitle.ZIndex = 51
+    smallTitle.Parent = warningFrame
+
+    -- 动画设置：弹出使用 Quint (丝滑减速)，收回使用 Quad (丝滑加速)
+    local tweenUp = TweenService:Create(warningFrame, TweenInfo.new(0.6, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, -210, 1, -100)})
+    local tweenDown = TweenService:Create(warningFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(0.5, -210, 1, 100)})
+
+    -- 执行动画序列
+    tweenUp:Play()
+    task.delay(5, function() -- 停留5秒
+        tweenDown:Play()
+        tweenDown.Completed:Wait()
+        warningFrame:Destroy()
+    end)
+end
+
+local function checkEmptyFolder()
+    local items = {}
+    if listfiles then pcall(function() items = listfiles(FOLDER_NAME) end) end
+    if #items == 0 then
+        showCustomEmptyFolderWarning()
+    end
+    return items
+end
+
+-- 启动检测
+task.spawn(function()
+    task.wait(1)
+    checkEmptyFolder()
+end)
+
+---------------------------------------------------------
+-- 状态与基础变量
+---------------------------------------------------------
 local isMinimized = false
 local sideUIOpen = false
 local currentImageMode = "none" 
@@ -29,13 +110,8 @@ local canDragImg = false
 local playTask = nil
 
 ---------------------------------------------------------
--- 1. 核心容器创建 (新增主 UI 白色描边)
+-- 1. 图片容器与其他 UI 框架
 ---------------------------------------------------------
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "HAOXIAO_ImagePlayer_GUI"
-ScreenGui.Parent = CoreGui
-ScreenGui.ResetOnSpawn = false
-
 local ImageDisplayGui = Instance.new("ScreenGui")
 ImageDisplayGui.Name = "HAOXIAO_Display"
 ImageDisplayGui.Parent = CoreGui
@@ -61,14 +137,13 @@ MainDraggable.Parent = ScreenGui
 local MainBg = Instance.new("Frame")
 MainBg.Size = UDim2.new(1, 0, 1, 0)
 MainBg.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-MainBg.BackgroundTransparency = 0.8
+MainBg.BackgroundTransparency = 0.8 
 MainBg.BorderSizePixel = 0
 MainBg.Parent = MainDraggable
 
 local MainBgCorner = Instance.new("UICorner", MainBg)
 MainBgCorner.CornerRadius = UDim.new(0, 5)
 
--- 【新增】主外部 UI 白色描边
 local MainBgStroke = Instance.new("UIStroke")
 MainBgStroke.Color = Color3.fromRGB(255, 255, 255)
 MainBgStroke.Thickness = 1
@@ -215,16 +290,10 @@ AcceptBtn.MouseButton1Click:Connect(function()
     if playTask then task.cancel(playTask) end
     ScreenGui:Destroy()
     ImageDisplayGui:Destroy()
-    StarterGui:SetCore("SendNotification", {
-        Title = "HAOXIAO";
-        Text = "感谢使用~";
-        Icon = "rbxassetid://87761482164390";
-        Duration = 2;
-    })
 end)
 
 ---------------------------------------------------------
--- 4. 侧边栏 UI (新增白色描边)
+-- 4. 侧边栏 UI
 ---------------------------------------------------------
 local SideUI = Instance.new("Frame")
 SideUI.Size = UDim2.new(0, 0, 0, 300)
@@ -237,7 +306,6 @@ SideUI.Visible = false
 SideUI.Parent = MainDraggable
 Instance.new("UICorner", SideUI).CornerRadius = UDim.new(0, 5)
 
--- 【新增】侧边栏白色描边保持统一
 local SideUIStroke = Instance.new("UIStroke")
 SideUIStroke.Color = Color3.fromRGB(255, 255, 255)
 SideUIStroke.Thickness = 1
@@ -296,7 +364,7 @@ SideMinBtn.MouseButton1Click:Connect(function()
 end)
 
 ---------------------------------------------------------
--- 5. 主内容区与模块工厂 (将模块宽度改为 140px)
+-- 5. 主内容区与模块工厂 (140px)
 ---------------------------------------------------------
 local ContentArea = Instance.new("Frame")
 ContentArea.Size = UDim2.new(1, 0, 1, -40)
@@ -319,7 +387,7 @@ ContentLayout.Parent = ContentScroll
 local function createModule(moduleType, text)
     local Mod = Instance.new("Frame")
     if moduleType == "Label" then
-        Mod.Size = UDim2.new(0, 140, 0, 20) -- 【修改】标签宽度变为 140px
+        Mod.Size = UDim2.new(0, 140, 0, 20)
         Mod.BackgroundTransparency = 1
         local Lbl = Instance.new("TextLabel")
         Lbl.Size = UDim2.new(1, 0, 1, 0)
@@ -330,7 +398,7 @@ local function createModule(moduleType, text)
         Lbl.Parent = Mod
         return Mod, Lbl
     else
-        Mod.Size = UDim2.new(0, 140, 0, 52) -- 【修改】功能模块宽度变为 140px
+        Mod.Size = UDim2.new(0, 140, 0, 52)
         Mod.BackgroundTransparency = 1
         local Stroke = Instance.new("UIStroke")
         Stroke.Color = Color3.fromRGB(255, 255, 255)
@@ -386,7 +454,7 @@ DispToggle.Parent = dispMod
 local speedMod = createModule("Slider", "播放速度 (30 FPS)")
 speedMod.Parent = ContentScroll
 local SpeedSliderBg = Instance.new("Frame")
-SpeedSliderBg.Size = UDim2.new(0, 115, 0, 4) -- 稍微调短配合140的宽度
+SpeedSliderBg.Size = UDim2.new(0, 115, 0, 4)
 SpeedSliderBg.Position = UDim2.new(0.5, -57.5, 0, 36)
 SpeedSliderBg.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
 SpeedSliderBg.Parent = speedMod
@@ -428,7 +496,7 @@ SizeKnob.Parent = SizeSliderBg
 ContentScroll.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 10)
 
 ---------------------------------------------------------
--- 6. 核心逻辑 
+-- 6. 核心逻辑 (修复纯本地缓存池)
 ---------------------------------------------------------
 
 local function bindClick(btn, action)
@@ -569,6 +637,10 @@ end
 OpenSideBtn.MouseButton1Click:Connect(function()
     if sideUIOpen then return end
     sideUIOpen = true
+    
+    -- 打开侧边栏前检查文件夹
+    local items = checkEmptyFolder()
+    
     SideUI.Visible = true
     SideUI.Size = UDim2.new(0, 0, 0, 300)
     TweenService:Create(SideUI, TweenInfo.new(0.3), {Size = UDim2.new(0, 150, 0, 300)}):Play()
@@ -577,8 +649,6 @@ OpenSideBtn.MouseButton1Click:Connect(function()
         if child:IsA("Frame") then child:Destroy() end
     end
     
-    local items = {}
-    if listfiles then pcall(function() items = listfiles(FOLDER_NAME) end) end
     table.sort(items) 
     
     for _, path in ipairs(items) do
@@ -671,5 +741,86 @@ makeSlider(SizeSliderBg, SizeKnob, 20, 800, function(val)
     ImageContainer.Size = UDim2.new(0, val, 0, val)
 end)
 
-print("HAOXIAO 播放器 - 140px模块 & 全局白边描边版 加载完毕！")
+---------------------------------------------------------
+-- 7. 聊天拦截系统 (隐藏与显示消息更新)
+---------------------------------------------------------
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- 初次加载时提示 (刚激活时提示一次)
+StarterGui:SetCore("SendNotification", {
+    Title = "显示UI了";
+    Text = "输入#隐藏UI#就可以隐藏UI";
+    Icon = "rbxassetid://112498001988193";
+    Duration = 4;
+})
+
+local ChatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+if ChatEvents then
+    local SayMessageRequest = ChatEvents:FindFirstChild("SayMessageRequest")
+    if SayMessageRequest then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            local method = getnamecallmethod()
+            local args = {...}
+            
+            if not checkcaller() and self == SayMessageRequest and method == "FireServer" then
+                local message = args[1]
+                
+                if message == "#隐藏UI#" then
+                    ScreenGui.Enabled = false
+                    ImageDisplayGui.Enabled = false
+                    
+                    StarterGui:SetCore("SendNotification", {
+                        Title = "隐藏UIing...";
+                        Text = "输入#显示UI#就可以显示ui";
+                        Icon = "rbxassetid://112498001988193";
+                        Duration = 4;
+                    })
+                    return 
+                    
+                elseif message == "#显示UI#" then
+                    ScreenGui.Enabled = true
+                    ImageDisplayGui.Enabled = true
+                    
+                    StarterGui:SetCore("SendNotification", {
+                        Title = "显示UI了";
+                        Text = "输入#隐藏UI#就可以隐藏UI";
+                        Icon = "rbxassetid://112498001988193";
+                        Duration = 4;
+                    })
+                    return 
+                end
+            end
+            
+            return oldNamecall(self, ...)
+        end)
+    end
+else
+    local TextChatService = game:GetService("TextChatService")
+    TextChatService.SendingMessage:Connect(function(textChatMessage)
+        local message = textChatMessage.Text
+        if message == "#隐藏UI#" then
+            ScreenGui.Enabled = false
+            ImageDisplayGui.Enabled = false
+            
+            StarterGui:SetCore("SendNotification", {
+                Title = "隐藏UIing...";
+                Text = "输入#显示UI#就可以显示ui";
+                Icon = "rbxassetid://112498001988193";
+                Duration = 4;
+            })
+            textChatMessage.Text = "" 
+        elseif message == "#显示UI#" then
+            ScreenGui.Enabled = true
+            ImageDisplayGui.Enabled = true
+            
+            StarterGui:SetCore("SendNotification", {
+                Title = "显示UI了";
+                Text = "输入#隐藏UI#就可以隐藏UI";
+                Icon = "rbxassetid://112498001988193";
+                Duration = 4;
+            })
+            textChatMessage.Text = ""
+        end
+    end)
+end
