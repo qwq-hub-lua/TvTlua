@@ -1,3 +1,4 @@
+--已开源💀,由AI协作生成
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
